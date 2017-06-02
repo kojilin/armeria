@@ -364,11 +364,11 @@ public class RequestContextTest {
 
         ((AbstractRequestContext) ctx).setTimedOut();
 
-        assertThatThrownBy(() -> executorService.submit(() -> {}))
+        assertThatThrownBy(() -> executorService.submit(() -> { }))
                 .isInstanceOf(RejectedExecutionException.class);
-        assertThatThrownBy(() -> executorService.execute(() -> {}))
+        assertThatThrownBy(() -> executorService.execute(() -> { }))
                 .isInstanceOf(RejectedExecutionException.class);
-        assertThatThrownBy(() -> executorService.submit(() -> {}, "foo"))
+        assertThatThrownBy(() -> executorService.submit(() -> { }, "foo"))
                 .isInstanceOf(RejectedExecutionException.class);
         assertThatThrownBy(() -> executorService.submit(() -> "foo"))
                 .isInstanceOf(RejectedExecutionException.class);
@@ -381,15 +381,15 @@ public class RequestContextTest {
         assertThatThrownBy(() -> executorService.invokeAny(ImmutableList.of(() -> "foo"), 10, TimeUnit.SECONDS))
                 .isInstanceOf(RejectedExecutionException.class);
 
-        assertThatThrownBy(() -> eventLoop.schedule(() -> {}, 0, TimeUnit.SECONDS))
+        assertThatThrownBy(() -> eventLoop.schedule(() -> { }, 0, TimeUnit.SECONDS))
                 .isInstanceOf(RejectedExecutionException.class);
         assertThatThrownBy(() -> eventLoop.schedule(() -> "foo", 0, TimeUnit.SECONDS))
                 .isInstanceOf(RejectedExecutionException.class);
         assertThatThrownBy(() -> eventLoop.scheduleAtFixedRate(
-                () -> {}, 0, 1, TimeUnit.SECONDS))
+                () -> { }, 0, 1, TimeUnit.SECONDS))
                 .isInstanceOf(RejectedExecutionException.class);
         assertThatThrownBy(() -> eventLoop.scheduleWithFixedDelay(
-                () -> {}, 0, 1, TimeUnit.SECONDS))
+                () -> { }, 0, 1, TimeUnit.SECONDS))
                 .isInstanceOf(RejectedExecutionException.class);
 
         AtomicBoolean callbackRun = new AtomicBoolean();
