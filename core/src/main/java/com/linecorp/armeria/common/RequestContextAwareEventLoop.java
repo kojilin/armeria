@@ -129,23 +129,27 @@ final class RequestContextAwareEventLoop extends RequestContextAwareExecutorServ
 
     @Override
     public ScheduledFuture<?> schedule(Runnable command, long delay, TimeUnit unit) {
+        rejectIfContextCancelled();
         return delegate().schedule(context().makeContextAware(command), delay, unit);
     }
 
     @Override
     public <V> ScheduledFuture<V> schedule(Callable<V> callable, long delay, TimeUnit unit) {
+        rejectIfContextCancelled();
         return delegate().schedule(context().makeContextAware(callable), delay, unit);
     }
 
     @Override
     public ScheduledFuture<?> scheduleAtFixedRate(
             Runnable command, long initialDelay, long period, TimeUnit unit) {
+        rejectIfContextCancelled();
         return delegate().scheduleAtFixedRate(context().makeContextAware(command), initialDelay, period, unit);
     }
 
     @Override
     public ScheduledFuture<?> scheduleWithFixedDelay(
             Runnable command, long initialDelay, long delay, TimeUnit unit) {
+        rejectIfContextCancelled();
         return delegate().scheduleWithFixedDelay(
                 context().makeContextAware(command), initialDelay, delay, unit);
     }

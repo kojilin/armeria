@@ -22,6 +22,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
@@ -60,16 +61,19 @@ class RequestContextAwareExecutorService implements ExecutorService {
 
     @Override
     public Future<?> submit(Runnable task) {
+        rejectIfContextCancelled();
         return delegate.submit(context.makeContextAware(task));
     }
 
     @Override
     public <T> Future<T> submit(Runnable task, T result) {
+        rejectIfContextCancelled();
         return delegate.submit(context.makeContextAware(task), result);
     }
 
     @Override
     public <T> Future<T> submit(Callable<T> task) {
+        rejectIfContextCancelled();
         return delegate.submit(context.makeContextAware(task));
     }
 
@@ -91,18 +95,21 @@ class RequestContextAwareExecutorService implements ExecutorService {
     @Override
     public final <T> List<Future<T>> invokeAll(
             Collection<? extends Callable<T>> tasks) throws InterruptedException {
+        rejectIfContextCancelled();
         return delegate.invokeAll(makeContextAware(tasks));
     }
 
     @Override
     public final <T> List<Future<T>> invokeAll(
             Collection<? extends Callable<T>> tasks, long timeout, TimeUnit unit) throws InterruptedException {
+        rejectIfContextCancelled();
         return delegate.invokeAll(makeContextAware(tasks), timeout, unit);
     }
 
     @Override
     public final <T> T invokeAny(Collection<? extends Callable<T>> tasks)
             throws InterruptedException, ExecutionException {
+        rejectIfContextCancelled();
         return delegate.invokeAny(makeContextAware(tasks));
     }
 
@@ -110,16 +117,25 @@ class RequestContextAwareExecutorService implements ExecutorService {
     public final <T> T invokeAny(
             Collection<? extends Callable<T>> tasks, long timeout, TimeUnit unit)
             throws InterruptedException, ExecutionException, TimeoutException {
+        rejectIfContextCancelled();
         return delegate.invokeAny(makeContextAware(tasks), timeout, unit);
     }
 
     @Override
     public final void execute(Runnable command) {
+        rejectIfContextCancelled();
         delegate.execute(context.makeContextAware(command));
     }
 
     private <T> Collection<? extends Callable<T>> makeContextAware(
             Collection<? extends Callable<T>> tasks) {
         return tasks.stream().map(context::makeContextAware).collect(Collectors.toList());
+    }
+
+    void rejectIfContextCancelled() {
+        if (context.timedOut()) {
+            throw new RejectedExecutionException(
+                    "Context has already been timed out, cancelling further execution.");
+        }
     }
 }

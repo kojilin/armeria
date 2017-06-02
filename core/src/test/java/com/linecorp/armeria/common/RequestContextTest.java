@@ -25,13 +25,14 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Callable;
-import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -48,6 +49,7 @@ import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnit;
 import org.mockito.junit.MockitoRule;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.util.concurrent.MoreExecutors;
 
 import com.linecorp.armeria.common.http.DefaultHttpRequest;
@@ -158,19 +160,6 @@ public class RequestContextTest {
     }
 
     @Test
-    public void makeContextAwareCallable_timedOut() throws Exception {
-        NonWrappingRequestContext context = createContext();
-        AtomicBoolean called = new AtomicBoolean();
-        Callable<?> callable = context.makeContextAware(() -> {
-            called.set(true);
-            return "success";
-        });
-        context.setTimedOut();
-        assertThatThrownBy(callable::call).isInstanceOf(CancellationException.class);
-        assertThat(called.get()).isFalse();
-    }
-
-    @Test
     public void makeContextAwareRunnable() {
         RequestContext context = createContext();
         context.makeContextAware(() -> {
@@ -178,16 +167,6 @@ public class RequestContextTest {
             assertDepth(1);
         }).run();
         assertDepth(0);
-    }
-
-    @Test
-    public void makeContextAwareRunnable_timedOut() {
-        NonWrappingRequestContext context = createContext();
-        AtomicBoolean called = new AtomicBoolean();
-        Runnable runnable = context.makeContextAware(() -> called.set(true));
-        context.setTimedOut();
-        assertThatThrownBy(runnable::run).isInstanceOf(CancellationException.class);
-        assertThat(called.get()).isFalse();
     }
 
     @Test
@@ -203,24 +182,6 @@ public class RequestContextTest {
         promise.setSuccess("success");
     }
 
-    @Test(timeout = 10000)
-    @SuppressWarnings("deprecation")
-    public void makeContextAwareFutureListener_timedOut() throws Exception {
-        when(channel.eventLoop()).thenReturn(eventLoop);
-        NonWrappingRequestContext context = createContext();
-        Promise<String> promise = new DefaultPromise<>(ImmediateEventExecutor.INSTANCE);
-        CountDownLatch latch = new CountDownLatch(1);
-        promise.addListener(context.makeContextAware((FutureListener<String>) f -> {
-            assertThatThrownBy(f::get).isInstanceOf(CancellationException.class);
-            latch.countDown();
-        }));
-        context.setTimedOut();
-        promise.setSuccess("success");
-
-        // The latch will not complete if the assertion in the FutureListener fails.
-        latch.await();
-    }
-
     @Test
     @SuppressWarnings("deprecation")
     public void makeContextAwareChannelFutureListener() {
@@ -232,24 +193,6 @@ public class RequestContextTest {
             assertThat(f.getNow()).isNull();
         }));
         promise.setSuccess(null);
-    }
-
-    @Test(timeout = 10000)
-    @SuppressWarnings("deprecation")
-    public void makeContextAwareChannelFutureListener_timedOut() throws Exception {
-        when(channel.eventLoop()).thenReturn(eventLoop);
-        NonWrappingRequestContext context = createContext();
-        ChannelPromise promise = new DefaultChannelPromise(channel, ImmediateEventExecutor.INSTANCE);
-        CountDownLatch latch = new CountDownLatch(1);
-        promise.addListener(context.makeContextAware((ChannelFutureListener) f -> {
-            assertThatThrownBy(f::get).isInstanceOf(CancellationException.class);
-            latch.countDown();
-        }));
-        context.setTimedOut();
-        promise.setSuccess(null);
-
-        // The latch will not complete if the assertion in the ChannelFutureListener fails.
-        latch.await();
     }
 
     @Test
@@ -266,20 +209,6 @@ public class RequestContextTest {
         originalFuture.complete("success");
         assertDepth(0);
         resultFuture.get(); // this will propagate assertions.
-    }
-
-    @Test
-    public void makeContextAwareCompletableFutureInSameThread_timedOut() throws Exception {
-        NonWrappingRequestContext context = createContext();
-        CompletableFuture<String> originalFuture = new CompletableFuture<>();
-        CompletableFuture<String> contextAwareFuture = context.makeContextAware(originalFuture);
-        AtomicBoolean called = new AtomicBoolean();
-        CompletableFuture<String> resultFuture =
-                contextAwareFuture.whenComplete((result, cause) -> called.set(true));
-        context.setTimedOut();
-        originalFuture.complete("success");
-        assertThat(called.get()).isFalse();
-        assertThatThrownBy(resultFuture::get).isInstanceOf(CancellationException.class);
     }
 
     @Test
@@ -424,6 +353,53 @@ public class RequestContextTest {
             assertThat(nested.get()).isFalse();
         }
         assertDepth(0);
+    }
+
+    @Test
+    public void timedOut() {
+        RequestContext ctx = createContext();
+
+        ExecutorService executorService = ctx.makeContextAware(MoreExecutors.newDirectExecutorService());
+        EventLoop eventLoop = ctx.contextAwareEventLoop();
+
+        ((AbstractRequestContext) ctx).setTimedOut();
+
+        assertThatThrownBy(() -> executorService.submit(() -> {}))
+                .isInstanceOf(RejectedExecutionException.class);
+        assertThatThrownBy(() -> executorService.execute(() -> {}))
+                .isInstanceOf(RejectedExecutionException.class);
+        assertThatThrownBy(() -> executorService.submit(() -> {}, "foo"))
+                .isInstanceOf(RejectedExecutionException.class);
+        assertThatThrownBy(() -> executorService.submit(() -> "foo"))
+                .isInstanceOf(RejectedExecutionException.class);
+        assertThatThrownBy(() -> executorService.invokeAll(ImmutableList.of(() -> "foo")))
+                .isInstanceOf(RejectedExecutionException.class);
+        assertThatThrownBy(() -> executorService.invokeAll(ImmutableList.of(() -> "foo"), 10, TimeUnit.SECONDS))
+                .isInstanceOf(RejectedExecutionException.class);
+        assertThatThrownBy(() -> executorService.invokeAny(ImmutableList.of(() -> "foo")))
+                .isInstanceOf(RejectedExecutionException.class);
+        assertThatThrownBy(() -> executorService.invokeAny(ImmutableList.of(() -> "foo"), 10, TimeUnit.SECONDS))
+                .isInstanceOf(RejectedExecutionException.class);
+
+        assertThatThrownBy(() -> eventLoop.schedule(() -> {}, 0, TimeUnit.SECONDS))
+                .isInstanceOf(RejectedExecutionException.class);
+        assertThatThrownBy(() -> eventLoop.schedule(() -> "foo", 0, TimeUnit.SECONDS))
+                .isInstanceOf(RejectedExecutionException.class);
+        assertThatThrownBy(() -> eventLoop.scheduleAtFixedRate(
+                () -> {}, 0, 1, TimeUnit.SECONDS))
+                .isInstanceOf(RejectedExecutionException.class);
+        assertThatThrownBy(() -> eventLoop.scheduleWithFixedDelay(
+                () -> {}, 0, 1, TimeUnit.SECONDS))
+                .isInstanceOf(RejectedExecutionException.class);
+
+        AtomicBoolean callbackRun = new AtomicBoolean();
+        CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> "foo")
+                                                            .thenApplyAsync((foo) -> {
+                                                                callbackRun.set(true);
+                                                                return "bar";
+                                                            }, executorService);
+        assertThatThrownBy(future::get).isInstanceOf(ExecutionException.class);
+        assertThat(callbackRun.get()).isFalse();
     }
 
     private void assertDepth(int expectedDepth) {
