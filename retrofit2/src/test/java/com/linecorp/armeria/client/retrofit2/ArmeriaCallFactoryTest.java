@@ -64,6 +64,7 @@ import okhttp3.HttpUrl;
 import retrofit2.Call;
 import retrofit2.Callback;
 import retrofit2.Response;
+import retrofit2.Retrofit;
 import retrofit2.adapter.java8.Java8CallAdapterFactory;
 import retrofit2.converter.jackson.JacksonConverterFactory;
 import retrofit2.http.Body;
@@ -311,9 +312,9 @@ public class ArmeriaCallFactoryTest {
 
     @Before
     public void setUp() {
-        service = new ArmeriaRetrofitBuilder()
+        service = new Retrofit.Builder()
                 .baseUrl(server.uri("/"))
-                .streaming(streaming)
+//                .streaming(streaming)
                 .addConverterFactory(JacksonConverterFactory.create(OBJECT_MAPPER))
                 .addCallAdapterFactory(Java8CallAdapterFactory.create())
                 .build()
@@ -352,6 +353,12 @@ public class ArmeriaCallFactoryTest {
 
         response = service.queryString("Foo%2BBar", 33).get();
         assertThat(response).isEqualTo(new Pojo("Foo%2BBar", 33));
+
+        response = service.queryString("Foo%26name%3DBar", 33).get();
+        assertThat(response).isEqualTo(new Pojo("Foo%26name%3DBar", 33));
+
+        response = service.queryString("Foo&name=Bar", 34).get();
+        assertThat(response).isEqualTo(new Pojo("Foo&name=Bar", 34));
     }
 
     @Test
@@ -361,6 +368,12 @@ public class ArmeriaCallFactoryTest {
 
         response = service.queryStringEncoded("Foo+Bar", 33).get();
         assertThat(response).isEqualTo(new Pojo("Foo Bar", 33));
+
+        response = service.queryStringEncoded("Foo&name=Bar", 33).get();
+        assertThat(response).isEqualTo(new Pojo("Foo&name=Bar", 33));
+
+        response = service.queryStringEncoded("Foo%26name%3DBar", 33).get();
+        assertThat(response).isEqualTo(new Pojo("Foo&name=Bar", 33));
     }
 
     @Test
