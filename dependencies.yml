@@ -432,6 +432,10 @@ org.mockito:
   mockito-core: { version: &MOCKITO_VERSION '3.2.4' }
   mockito-junit-jupiter: { version: *MOCKITO_VERSION }
 
+org.mock-server:
+  mockserver-netty: { version: &MOCK_SERVER_VERSION '5.9.0' }
+  mockserver-junit-rule: { version: *MOCK_SERVER_VERSION }
+
 org.mortbay.jetty.alpn:
   jetty-alpn-agent: { version: '2.0.9' }
 

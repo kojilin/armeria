@@ -87,6 +87,7 @@ final class HttpClientFactory implements ClientFactory {
     private final boolean useHttp1Pipelining;
     private final ConnectionPoolListener connectionPoolListener;
     private MeterRegistry meterRegistry;
+    private final Proxy proxy;
 
     private final ConcurrentMap<EventLoop, HttpChannelPool> pools = new MapMaker().weakKeys().makeMap();
     private final HttpClientDelegate clientDelegate;
@@ -132,6 +133,7 @@ final class HttpClientFactory implements ClientFactory {
         useHttp1Pipelining = options.useHttp1Pipelining();
         connectionPoolListener = options.connectionPoolListener();
         meterRegistry = options.meterRegistry();
+        proxy = options.proxy();
 
         this.options = options;
 
@@ -192,6 +194,10 @@ final class HttpClientFactory implements ClientFactory {
 
     ConnectionPoolListener connectionPoolListener() {
         return connectionPoolListener;
+    }
+
+    Proxy proxy() {
+        return proxy;
     }
 
     @VisibleForTesting

@@ -38,6 +38,7 @@ import org.slf4j.LoggerFactory;
 
 import com.google.common.base.MoreObjects;
 
+import com.linecorp.armeria.client.Proxy.ProxyType;
 import com.linecorp.armeria.common.ClosedSessionException;
 import com.linecorp.armeria.common.SessionProtocol;
 import com.linecorp.armeria.common.logging.ClientConnectionTimingsBuilder;
@@ -45,12 +46,26 @@ import com.linecorp.armeria.common.util.AsyncCloseable;
 import com.linecorp.armeria.common.util.AsyncCloseableSupport;
 
 import io.netty.bootstrap.Bootstrap;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
+import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
+import io.netty.channel.ChannelOutboundHandlerAdapter;
+import io.netty.channel.ChannelPipeline;
+import io.netty.channel.ChannelPromise;
 import io.netty.channel.EventLoop;
+import io.netty.handler.codec.base64.Base64;
+import io.netty.handler.codec.http.HttpHeaderNames;
+import io.netty.handler.codec.http.HttpRequest;
+import io.netty.handler.proxy.HttpProxyHandler;
+import io.netty.handler.proxy.Socks4ProxyHandler;
+import io.netty.handler.proxy.Socks5ProxyHandler;
+import io.netty.util.AsciiString;
+import io.netty.util.CharsetUtil;
 import io.netty.util.NetUtil;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.Promise;
@@ -99,8 +114,9 @@ final class HttpChannelPool implements AsyncCloseable {
                     bootstrap.handler(new ChannelInitializer<Channel>() {
                         @Override
                         protected void initChannel(Channel ch) throws Exception {
-                            ch.pipeline().addLast(
-                                    new HttpClientPipelineConfigurator(clientFactory, desiredProtocol));
+                            final ChannelPipeline p = ch.pipeline();
+                            p.addLast(new HttpClientPipelineConfigurator(clientFactory, desiredProtocol));
+                            applyProxy(p, clientFactory.proxy(), desiredProtocol);
                         }
                     });
                     return bootstrap;
@@ -110,6 +126,49 @@ final class HttpChannelPool implements AsyncCloseable {
                 SessionProtocol.H2, SessionProtocol.H2C);
         connectTimeoutMillis = (Integer) baseBootstrap.config().options()
                                                       .get(ChannelOption.CONNECT_TIMEOUT_MILLIS);
+    }
+
+    /**
+     * Check proxy setting and apply to the channel pipeline.
+     */
+    private static void applyProxy(ChannelPipeline p, Proxy proxy, SessionProtocol desiredProtocol) {
+        final ProxyType proxyType = proxy.getProxyType();
+        if (proxyType == ProxyType.DIRECT) {
+            return;
+        }
+        final SocketAddress socketAddress = proxy.getSocketAddress();
+        assert socketAddress != null;
+
+        switch (proxyType) {
+            case HTTP_PROXY:
+                if (proxy.isForceTunneling() || (desiredProtocol != SessionProtocol.H1C
+                                                 && desiredProtocol != SessionProtocol.HTTP)) {
+                    if (proxy.getUsername() != null && proxy.getPassword() != null) {
+                        p.addFirst(new HttpProxyHandler(socketAddress, proxy.getUsername(),
+                                                        proxy.getPassword()));
+                    } else {
+                        p.addFirst(new HttpProxyHandler(socketAddress));
+                    }
+                } else {
+                    if (proxy.getUsername() != null && proxy.getPassword() != null) {
+                        p.addFirst(new ForwardProxyHandler(socketAddress));
+                    } else {
+                        p.addFirst(new ForwardProxyHandler(socketAddress));
+                    }
+                }
+                break;
+            case SOCKS4:
+                p.addFirst(new Socks4ProxyHandler(socketAddress));
+                break;
+            case SOCKS5:
+                if (proxy.getUsername() != null && proxy.getPassword() != null) {
+                    p.addFirst(new Socks5ProxyHandler(socketAddress, proxy.getUsername(),
+                                                      proxy.getPassword()));
+                } else {
+                    p.addFirst(new Socks5ProxyHandler(socketAddress));
+                }
+                break;
+        }
     }
 
     /**

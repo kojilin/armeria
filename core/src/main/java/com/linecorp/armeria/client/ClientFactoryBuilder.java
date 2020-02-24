@@ -476,6 +476,14 @@ public final class ClientFactoryBuilder {
     }
 
     /**
+     * Sets the {@link Proxy} which is used by the client.
+     */
+    public ClientFactoryBuilder proxy(Proxy proxy) {
+        option(ClientFactoryOption.PROXY, requireNonNull(proxy, "proxy"));
+        return this;
+    }
+
+    /**
      * Adds the specified {@link ClientFactoryOption} and its {@code value}.
      */
     public <T> ClientFactoryBuilder option(ClientFactoryOption<T> option, T value) {

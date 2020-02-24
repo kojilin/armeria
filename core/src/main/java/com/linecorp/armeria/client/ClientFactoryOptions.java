@@ -66,6 +66,8 @@ public final class ClientFactoryOptions extends AbstractOptions {
     private static final ConnectionPoolListener DEFAULT_CONNECTION_POOL_LISTENER =
             ConnectionPoolListener.noop();
 
+    private static final Proxy DEFAULT_PROXY = Proxy.DIRECT;
+
     // Do not accept 1) the options that may break Armeria and 2) the deprecated options.
     @SuppressWarnings("deprecation")
     private static final Set<ChannelOption<?>> PROHIBITED_SOCKET_OPTIONS = ImmutableSet.of(
@@ -95,7 +97,8 @@ public final class ClientFactoryOptions extends AbstractOptions {
             ClientFactoryOption.USE_HTTP2_PREFACE.newValue(Flags.defaultUseHttp2Preface()),
             ClientFactoryOption.USE_HTTP1_PIPELINING.newValue(Flags.defaultUseHttp1Pipelining()),
             ClientFactoryOption.CONNECTION_POOL_LISTENER.newValue(DEFAULT_CONNECTION_POOL_LISTENER),
-            ClientFactoryOption.METER_REGISTRY.newValue(Metrics.globalRegistry)
+            ClientFactoryOption.METER_REGISTRY.newValue(Metrics.globalRegistry),
+            ClientFactoryOption.PROXY.newValue(DEFAULT_PROXY)
     };
 
     private static final ClientFactoryOptions DEFAULT = new ClientFactoryOptions(DEFAULT_OPTIONS);
@@ -409,5 +412,12 @@ public final class ClientFactoryOptions extends AbstractOptions {
      */
     public MeterRegistry meterRegistry() {
         return get0(ClientFactoryOption.METER_REGISTRY);
+    }
+
+    /**
+     * Returns the {@link Proxy} which is used by the client.
+     */
+    public Proxy proxy() {
+        return get0(ClientFactoryOption.PROXY);
     }
 }

@@ -106,7 +106,7 @@ dependencies {
     optionalApi 'io.prometheus:simpleclient_common'
 
     // Netty
-    [ 'netty-transport', 'netty-codec-http2', 'netty-codec-haproxy', 'netty-resolver-dns' ].each {
+    [ 'netty-transport', 'netty-codec-http2', 'netty-codec-haproxy', 'netty-resolver-dns', 'netty-handler-proxy' ].each {
         api "io.netty:$it"
     }
     implementation "io.netty:netty-transport-native-unix-common:${managedVersions['io.netty:netty-transport-native-unix-common']}:linux-x86_64"
@@ -128,6 +128,10 @@ dependencies {
 
     // Jetty, for testing interoperability with other servers.
     testImplementation 'org.eclipse.jetty:jetty-webapp'
+
+    // Proxy
+    testImplementation 'org.mock-server:mockserver-netty'
+    testImplementation 'org.mock-server:mockserver-junit-rule'
 }
 
 if (!rootProject.hasProperty('noWeb')) {

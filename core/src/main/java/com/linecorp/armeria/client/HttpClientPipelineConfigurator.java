@@ -16,18 +16,6 @@
 
 package com.linecorp.armeria.client;
 
-import static com.google.common.base.MoreObjects.firstNonNull;
-import static com.linecorp.armeria.client.HttpSessionHandler.PENDING_EXCEPTION;
-import static com.linecorp.armeria.common.SessionProtocol.H1;
-import static com.linecorp.armeria.common.SessionProtocol.H1C;
-import static com.linecorp.armeria.common.SessionProtocol.H2;
-import static com.linecorp.armeria.common.SessionProtocol.H2C;
-import static com.linecorp.armeria.common.SessionProtocol.HTTP;
-import static com.linecorp.armeria.common.SessionProtocol.HTTPS;
-import static io.netty.handler.codec.http.HttpClientUpgradeHandler.UpgradeEvent.UPGRADE_REJECTED;
-import static io.netty.handler.codec.http2.Http2CodecUtil.DEFAULT_MAX_FRAME_SIZE;
-import static io.netty.handler.codec.http2.Http2CodecUtil.DEFAULT_WINDOW_SIZE;
-
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.util.List;
@@ -54,15 +42,18 @@ import com.linecorp.armeria.internal.common.util.ChannelUtil;
 import com.linecorp.armeria.internal.common.util.SslContextUtil;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.ChannelPromise;
 import io.netty.handler.codec.ByteToMessageDecoder;
 import io.netty.handler.codec.DecoderException;
+import io.netty.handler.codec.base64.Base64;
 import io.netty.handler.codec.http.DefaultFullHttpRequest;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.HttpClientUpgradeHandler;
@@ -71,6 +62,7 @@ import io.netty.handler.codec.http.HttpContent;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.HttpMethod;
+import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
@@ -87,7 +79,20 @@ import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.ssl.SslHandshakeCompletionEvent;
 import io.netty.util.AsciiString;
+import io.netty.util.CharsetUtil;
 import io.netty.util.ReferenceCountUtil;
+
+import static com.google.common.base.MoreObjects.firstNonNull;
+import static com.linecorp.armeria.client.HttpSessionHandler.PENDING_EXCEPTION;
+import static com.linecorp.armeria.common.SessionProtocol.H1;
+import static com.linecorp.armeria.common.SessionProtocol.H1C;
+import static com.linecorp.armeria.common.SessionProtocol.H2;
+import static com.linecorp.armeria.common.SessionProtocol.H2C;
+import static com.linecorp.armeria.common.SessionProtocol.HTTP;
+import static com.linecorp.armeria.common.SessionProtocol.HTTPS;
+import static io.netty.handler.codec.http.HttpClientUpgradeHandler.UpgradeEvent.UPGRADE_REJECTED;
+import static io.netty.handler.codec.http2.Http2CodecUtil.DEFAULT_MAX_FRAME_SIZE;
+import static io.netty.handler.codec.http2.Http2CodecUtil.DEFAULT_WINDOW_SIZE;
 
 final class HttpClientPipelineConfigurator extends ChannelDuplexHandler {
 
@@ -337,6 +342,32 @@ final class HttpClientPipelineConfigurator extends ChannelDuplexHandler {
             if (initialWindow > DEFAULT_WINDOW_SIZE) {
                 incrementLocalWindowSize(pipeline, initialWindow - DEFAULT_WINDOW_SIZE);
             }
+        }
+
+        if (protocol == H1C) {
+            // Only H1C can use Forward Proxy.
+            addBeforeSessionHandler(pipeline, new ChannelOutboundHandlerAdapter() {
+                @Override
+                public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise)
+                        throws Exception {
+                    if (msg instanceof HttpRequest) {
+                        final HttpRequest httpRequest = (HttpRequest) msg;
+                        if (httpRequest.uri().startsWith("/")) {
+                            httpRequest.setUri("http://"
+                                               + httpRequest.headers().get(HttpHeaderNames.HOST)
+                                               + httpRequest.uri());
+                        }
+                        final ByteBuf authz = Unpooled.copiedBuffer("foo:bar", CharsetUtil.UTF_8);
+                        final ByteBuf authzBase64 = Base64.encode(authz, false);
+                        AsciiString authorization = new AsciiString(
+                                "Basic " + authzBase64.toString(CharsetUtil.US_ASCII));
+                        authz.release();
+                        authzBase64.release();
+                        httpRequest.headers().set(HttpHeaderNames.PROXY_AUTHORIZATION, authorization);
+                    }
+                    ctx.write(msg, promise);
+                }
+            });
         }
 
         final long idleTimeoutMillis = clientFactory.idleTimeoutMillis();

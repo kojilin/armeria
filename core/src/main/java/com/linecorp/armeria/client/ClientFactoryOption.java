@@ -169,6 +169,11 @@ public final class ClientFactoryOption<T> extends AbstractOption<T> {
     public static final ClientFactoryOption<MeterRegistry> METER_REGISTRY = valueOf("METER_REGISTRY");
 
     /**
+     * The {@link Proxy} which is used by the client.
+     */
+    public static final ClientFactoryOption<Proxy> PROXY = valueOf("PROXY");
+
+    /**
      * Returns the {@link ClientFactoryOption} of the specified name.
      */
     @SuppressWarnings("unchecked")
