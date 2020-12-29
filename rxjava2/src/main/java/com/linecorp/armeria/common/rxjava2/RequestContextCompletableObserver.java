@@ -18,7 +18,6 @@ package com.linecorp.armeria.common.rxjava2;
 
 import com.linecorp.armeria.common.RequestContext;
 import com.linecorp.armeria.common.util.SafeCloseable;
-
 import io.reactivex.CompletableObserver;
 import io.reactivex.disposables.Disposable;
 import io.reactivex.internal.disposables.DisposableHelper;
