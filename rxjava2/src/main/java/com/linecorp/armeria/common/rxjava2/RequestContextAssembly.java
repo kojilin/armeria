@@ -48,7 +48,8 @@ public final class RequestContextAssembly {
 
     @Nullable
     @GuardedBy("RequestContextAssembly.class")
-    private static BiFunction<? super Maybe, MaybeObserver, ? extends MaybeObserver> oldOnMaybeSubscribe;
+    private static BiFunction<? super Maybe, ? super MaybeObserver, ? extends MaybeObserver>
+            oldOnMaybeSubscribe;
 
     @Nullable
     @GuardedBy("RequestContextAssembly.class")
@@ -91,9 +92,7 @@ public final class RequestContextAssembly {
                             }
                         }));
 
-        oldOnMaybeSubscribe =
-                (BiFunction<? super Maybe, MaybeObserver, ? extends MaybeObserver>)
-                        RxJavaPlugins.getOnMaybeSubscribe();
+        oldOnMaybeSubscribe = RxJavaPlugins.getOnMaybeSubscribe();
         RxJavaPlugins.setOnMaybeSubscribe(
                 (BiFunction<? super Maybe, MaybeObserver, ? extends MaybeObserver>)
                         compose(oldOnMaybeSubscribe,
@@ -150,7 +149,8 @@ public final class RequestContextAssembly {
 
         RxJavaPlugins.setOnCompletableSubscribe(oldOnCompletableSubscribe);
         oldOnCompletableSubscribe = null;
-        RxJavaPlugins.setOnMaybeSubscribe(oldOnMaybeSubscribe);
+        RxJavaPlugins.setOnMaybeSubscribe(
+                (BiFunction<? super Maybe, MaybeObserver, ? extends MaybeObserver>) oldOnMaybeSubscribe);
         oldOnMaybeSubscribe = null;
         RxJavaPlugins.setOnSingleSubscribe(oldOnSingleSubscribe);
         oldOnSingleSubscribe = null;
@@ -162,15 +162,6 @@ public final class RequestContextAssembly {
         enabled = false;
     }
 
-    private static <T1, T2> BiFunction<? super T1, ? super T2, ? extends T2> compose(
-            @Nullable BiFunction<? super T1, ? super T2, ? extends T2> before,
-            BiFunction<? super T1, ? super T2, ? extends T2> after) {
-        if (before == null) {
-            return after;
-        }
-        return (T1 t1, T2 t2) -> after.apply(t1, before.apply(t1, t2));
-    }
-
     private abstract static class ConditionalOnCurrentRequestContextBiFunction<T1, T2>
             implements BiFunction<T1, T2, T2> {
         @Override
@@ -179,5 +170,14 @@ public final class RequestContextAssembly {
         }
 
         abstract T2 applyActual(T2 t, RequestContext ctx);
+    }
+
+    private static <T1, T2> BiFunction<? super T1, ? super T2, ? extends T2> compose(
+            @Nullable BiFunction<? super T1, ? super T2, ? extends T2> before,
+            BiFunction<? super T1, ? super T2, ? extends T2> after) {
+        if (before == null) {
+            return after;
+        }
+        return (T1 t1, T2 t2) -> after.apply(t1, before.apply(t1, t2));
     }
 }

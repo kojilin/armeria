@@ -18,63 +18,52 @@ package com.linecorp.armeria.common.rxjava3;
 
 import javax.annotation.Nullable;
 
+import org.reactivestreams.Subscriber;
+
 import com.google.errorprone.annotations.concurrent.GuardedBy;
 
 import com.linecorp.armeria.common.RequestContext;
 
 import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.core.CompletableObserver;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Maybe;
+import io.reactivex.rxjava3.core.MaybeObserver;
 import io.reactivex.rxjava3.core.Observable;
+import io.reactivex.rxjava3.core.Observer;
 import io.reactivex.rxjava3.core.Single;
-import io.reactivex.rxjava3.flowables.ConnectableFlowable;
-import io.reactivex.rxjava3.functions.Function;
-import io.reactivex.rxjava3.functions.Supplier;
-import io.reactivex.rxjava3.internal.fuseable.ScalarSupplier;
-import io.reactivex.rxjava3.observables.ConnectableObservable;
-import io.reactivex.rxjava3.parallel.ParallelFlowable;
+import io.reactivex.rxjava3.core.SingleObserver;
+import io.reactivex.rxjava3.functions.BiFunction;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 
 /**
  * Utility class to keep {@link RequestContext} during RxJava operations.
  */
 public final class RequestContextAssembly {
+    @Nullable
+    @GuardedBy("RequestContextAssembly.class")
+    private static BiFunction<? super Completable, ? super CompletableObserver, ? extends CompletableObserver>
+            oldOnCompletableSubscribe;
 
-    @SuppressWarnings("rawtypes")
     @Nullable
     @GuardedBy("RequestContextAssembly.class")
-    private static Function<? super Observable, ? extends Observable> oldOnObservableAssembly;
-    @SuppressWarnings("rawtypes")
-    @Nullable
-    @GuardedBy("RequestContextAssembly.class")
-    private static Function<? super ConnectableObservable, ? extends ConnectableObservable>
-            oldOnConnectableObservableAssembly;
-    @SuppressWarnings("rawtypes")
-    @Nullable
-    @GuardedBy("RequestContextAssembly.class")
-    private static Function<? super Completable, ? extends Completable> oldOnCompletableAssembly;
-    @SuppressWarnings("rawtypes")
-    @Nullable
-    @GuardedBy("RequestContextAssembly.class")
-    private static Function<? super Single, ? extends Single> oldOnSingleAssembly;
-    @SuppressWarnings("rawtypes")
-    @Nullable
-    @GuardedBy("RequestContextAssembly.class")
-    private static Function<? super Maybe, ? extends Maybe> oldOnMaybeAssembly;
-    @SuppressWarnings("rawtypes")
-    @Nullable
-    @GuardedBy("RequestContextAssembly.class")
-    private static Function<? super Flowable, ? extends Flowable> oldOnFlowableAssembly;
-    @SuppressWarnings("rawtypes")
-    @Nullable
-    @GuardedBy("RequestContextAssembly.class")
-    private static Function<? super ConnectableFlowable, ? extends ConnectableFlowable>
-            oldOnConnectableFlowableAssembly;
-    @SuppressWarnings("rawtypes")
-    @Nullable
-    @GuardedBy("RequestContextAssembly.class")
-    private static Function<? super ParallelFlowable, ? extends ParallelFlowable> oldOnParallelAssembly;
+    private static BiFunction<? super Maybe, ? super MaybeObserver, ? extends MaybeObserver>
+            oldOnMaybeSubscribe;
 
+    @Nullable
+    @GuardedBy("RequestContextAssembly.class")
+    private static BiFunction<? super Single, ? super SingleObserver, ? extends SingleObserver>
+            oldOnSingleSubscribe;
+
+    @Nullable
+    @GuardedBy("RequestContextAssembly.class")
+    private static BiFunction<? super Flowable, ? super Subscriber, ? extends Subscriber>
+            oldOnFlowableSubscribe;
+
+    @Nullable
+    @GuardedBy("RequestContextAssembly.class")
+    private static BiFunction<? super Observable, ? super Observer, ? extends Observer>
+            oldOnObservableSubscribe;
     @GuardedBy("RequestContextAssembly.class")
     private static boolean enabled;
 
@@ -87,108 +76,60 @@ public final class RequestContextAssembly {
             return;
         }
 
-        oldOnObservableAssembly = RxJavaPlugins.getOnObservableAssembly();
-        RxJavaPlugins.setOnObservableAssembly(compose(
-                oldOnObservableAssembly,
-                new ConditionalOnCurrentRequestContextFunction<Observable>() {
-                    @Override
-                    Observable applyActual(Observable o, RequestContext ctx) {
-                        if (!(o instanceof Supplier)) {
-                            return new RequestContextObservable(o, ctx);
-                        }
-                        if (o instanceof ScalarSupplier) {
-                            return new RequestContextScalarSupplierObservable(o, ctx);
-                        }
-                        return new RequestContextSupplierObservable(o, ctx);
-                    }
-                }));
-
-        oldOnConnectableObservableAssembly = RxJavaPlugins.getOnConnectableObservableAssembly();
-        RxJavaPlugins.setOnConnectableObservableAssembly(compose(
-                oldOnConnectableObservableAssembly,
-                new ConditionalOnCurrentRequestContextFunction<ConnectableObservable>() {
-                    @Override
-                    ConnectableObservable applyActual(ConnectableObservable co, RequestContext ctx) {
-                        return new RequestContextConnectableObservable(co, ctx);
-                    }
-                }));
-
-        oldOnCompletableAssembly = RxJavaPlugins.getOnCompletableAssembly();
-        RxJavaPlugins.setOnCompletableAssembly(
-                compose(oldOnCompletableAssembly,
-                        new ConditionalOnCurrentRequestContextFunction<Completable>() {
+        oldOnCompletableSubscribe = RxJavaPlugins.getOnCompletableSubscribe();
+        RxJavaPlugins.setOnCompletableSubscribe(
+                compose(oldOnCompletableSubscribe,
+                        new ConditionalOnCurrentRequestContextBiFunction<Completable, CompletableObserver>() {
                             @Override
-                            Completable applyActual(Completable c, RequestContext ctx) {
-                                return new RequestContextCompletable(c, ctx);
+                            CompletableObserver applyActual(
+                                    CompletableObserver t, RequestContext ctx) {
+                                return new RequestContextCompletableObserver(t, ctx);
                             }
                         }));
 
-        oldOnSingleAssembly = RxJavaPlugins.getOnSingleAssembly();
-        RxJavaPlugins.setOnSingleAssembly(
-                compose(oldOnSingleAssembly, new ConditionalOnCurrentRequestContextFunction<Single>() {
-                    @Override
-                    Single applyActual(Single s, RequestContext ctx) {
-                        if (!(s instanceof Supplier)) {
-                            return new RequestContextSingle(s, ctx);
-                        }
-                        if (s instanceof ScalarSupplier) {
-                            return new RequestContextScalarSupplierSingle(s, ctx);
-                        }
-                        return new RequestContextSupplierSingle(s, ctx);
-                    }
-                }));
+        oldOnMaybeSubscribe = RxJavaPlugins.getOnMaybeSubscribe();
+        RxJavaPlugins.setOnMaybeSubscribe(
+                (BiFunction<? super Maybe, MaybeObserver, ? extends MaybeObserver>)
+                        compose(oldOnMaybeSubscribe,
+                                new ConditionalOnCurrentRequestContextBiFunction<Maybe, MaybeObserver>() {
+                                    @Override
+                                    MaybeObserver applyActual(MaybeObserver t, RequestContext ctx) {
+                                        return new RequestContextMaybeObserver(t, ctx);
+                                    }
+                                }));
 
-        oldOnMaybeAssembly = RxJavaPlugins.getOnMaybeAssembly();
-        RxJavaPlugins.setOnMaybeAssembly(
-                compose(oldOnMaybeAssembly, new ConditionalOnCurrentRequestContextFunction<Maybe>() {
-                    @Override
-                    Maybe applyActual(Maybe m, RequestContext ctx) {
-                        if (!(m instanceof Supplier)) {
-                            return new RequestContextMaybe(m, ctx);
-                        }
-                        if (m instanceof ScalarSupplier) {
-                            return new RequestContextScalarSupplierMaybe(m, ctx);
-                        }
-                        return new RequestContextSupplierMaybe(m, ctx);
-                    }
-                }));
-
-        oldOnFlowableAssembly = RxJavaPlugins.getOnFlowableAssembly();
-        RxJavaPlugins.setOnFlowableAssembly(
-                compose(oldOnFlowableAssembly, new ConditionalOnCurrentRequestContextFunction<Flowable>() {
-                    @Override
-                    Flowable applyActual(Flowable f, RequestContext ctx) {
-                        if (!(f instanceof Supplier)) {
-                            return new RequestContextFlowable(f, ctx);
-                        }
-                        if (f instanceof ScalarSupplier) {
-                            return new RequestContextScalarSupplierFlowable(f, ctx);
-                        }
-                        return new RequestContextSupplierFlowable(f, ctx);
-                    }
-                }));
-
-        oldOnConnectableFlowableAssembly = RxJavaPlugins.getOnConnectableFlowableAssembly();
-        RxJavaPlugins.setOnConnectableFlowableAssembly(
-                compose(oldOnConnectableFlowableAssembly,
-                        new ConditionalOnCurrentRequestContextFunction<ConnectableFlowable>() {
+        oldOnSingleSubscribe = RxJavaPlugins.getOnSingleSubscribe();
+        RxJavaPlugins.setOnSingleSubscribe(
+                compose(oldOnSingleSubscribe,
+                        new ConditionalOnCurrentRequestContextBiFunction<Single, SingleObserver>() {
                             @Override
-                            ConnectableFlowable applyActual(ConnectableFlowable cf, RequestContext ctx) {
-                                return new RequestContextConnectableFlowable(cf, ctx);
+                            SingleObserver applyActual(SingleObserver t,
+                                                       RequestContext ctx) {
+                                return new RequestContextSingleObserver(t, ctx);
                             }
-                        }
-                ));
+                        }));
 
-        oldOnParallelAssembly = RxJavaPlugins.getOnParallelAssembly();
-        RxJavaPlugins.setOnParallelAssembly(
-                compose(oldOnParallelAssembly,
-                        new ConditionalOnCurrentRequestContextFunction<ParallelFlowable>() {
+        oldOnFlowableSubscribe = RxJavaPlugins.getOnFlowableSubscribe();
+        RxJavaPlugins.setOnFlowableSubscribe(
+                compose(oldOnFlowableSubscribe,
+                        new ConditionalOnCurrentRequestContextBiFunction<Flowable, Subscriber>() {
                             @Override
-                            ParallelFlowable applyActual(ParallelFlowable pf, RequestContext ctx) {
-                                return new RequestContextParallelFlowable(pf, ctx);
+                            Subscriber applyActual(Subscriber t,
+                                                   RequestContext ctx) {
+                                return new RequestContextSubscriber(t, ctx);
                             }
-                        }
-                ));
+                        }));
+
+        oldOnObservableSubscribe = RxJavaPlugins.getOnObservableSubscribe();
+        RxJavaPlugins.setOnObservableSubscribe(
+                compose(oldOnObservableSubscribe,
+                        new ConditionalOnCurrentRequestContextBiFunction<Observable, Observer>() {
+                            @Override
+                            Observer applyActual(Observer t,
+                                                 RequestContext ctx) {
+                                return new RequestContextObserver(t, ctx);
+                            }
+                        }));
         enabled = true;
     }
 
@@ -199,42 +140,38 @@ public final class RequestContextAssembly {
         if (!enabled) {
             return;
         }
-        RxJavaPlugins.setOnObservableAssembly(oldOnObservableAssembly);
-        oldOnObservableAssembly = null;
-        RxJavaPlugins.setOnConnectableObservableAssembly(oldOnConnectableObservableAssembly);
-        oldOnConnectableObservableAssembly = null;
-        RxJavaPlugins.setOnCompletableAssembly(oldOnCompletableAssembly);
-        oldOnCompletableAssembly = null;
-        RxJavaPlugins.setOnSingleAssembly(oldOnSingleAssembly);
-        oldOnSingleAssembly = null;
-        RxJavaPlugins.setOnMaybeAssembly(oldOnMaybeAssembly);
-        oldOnMaybeAssembly = null;
-        RxJavaPlugins.setOnFlowableAssembly(oldOnFlowableAssembly);
-        oldOnFlowableAssembly = null;
-        RxJavaPlugins.setOnConnectableFlowableAssembly(oldOnConnectableFlowableAssembly);
-        oldOnConnectableFlowableAssembly = null;
-        RxJavaPlugins.setOnParallelAssembly(oldOnParallelAssembly);
-        oldOnParallelAssembly = null;
+        RxJavaPlugins.setOnCompletableSubscribe(oldOnCompletableSubscribe);
+        oldOnCompletableSubscribe = null;
+        RxJavaPlugins.setOnMaybeSubscribe(
+                (BiFunction<? super Maybe, MaybeObserver, ? extends MaybeObserver>) oldOnMaybeSubscribe);
+        oldOnMaybeSubscribe = null;
+        RxJavaPlugins.setOnSingleSubscribe(oldOnSingleSubscribe);
+        oldOnSingleSubscribe = null;
+        RxJavaPlugins.setOnFlowableSubscribe(oldOnFlowableSubscribe);
+        oldOnFlowableSubscribe = null;
+        RxJavaPlugins.setOnObservableSubscribe(oldOnObservableSubscribe);
+        oldOnObservableSubscribe = null;
         enabled = false;
     }
 
     private RequestContextAssembly() {}
 
-    private abstract static class ConditionalOnCurrentRequestContextFunction<T> implements Function<T, T> {
+    private abstract static class ConditionalOnCurrentRequestContextBiFunction<T1, T2>
+            implements BiFunction<T1, T2, T2> {
         @Override
-        public final T apply(T t) {
-            return RequestContext.mapCurrent(requestContext -> applyActual(t, requestContext), () -> t);
+        public T2 apply(T1 t1, T2 t2) throws Exception {
+            return RequestContext.mapCurrent(requestContext -> applyActual(t2, requestContext), () -> t2);
         }
 
-        abstract T applyActual(T t, RequestContext ctx);
+        abstract T2 applyActual(T2 t, RequestContext ctx);
     }
 
-    private static <T> Function<? super T, ? extends T> compose(
-            @Nullable Function<? super T, ? extends T> before,
-            Function<? super T, ? extends T> after) {
+    private static <T1, T2> BiFunction<? super T1, ? super T2, ? extends T2> compose(
+            @Nullable BiFunction<? super T1, ? super T2, ? extends T2> before,
+            BiFunction<? super T1, ? super T2, ? extends T2> after) {
         if (before == null) {
             return after;
         }
-        return (T v) -> after.apply(before.apply(v));
+        return (T1 t1, T2 t2) -> after.apply(t1, before.apply(t1, t2));
     }
 }
