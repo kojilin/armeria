@@ -1,3 +1,4 @@
+hi
 test
 Visit [the official web site](https://armeria.dev/) for more information.
 
